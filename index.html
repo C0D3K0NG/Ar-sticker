@@ -6,11 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AR Bunny Detective</title>
 
-  <!-- A-Frame + MindAR + Extras -->
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
   <style>
     /* ── Reset ─────────────────────────────────────────── */
     * {
@@ -66,7 +61,6 @@
       position: absolute;
       width: 48px;
       height: 48px;
-      /* camera icon via inline SVG data-uri */
       background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%2382c8ff' viewBox='0 0 24 24'%3E%3Cpath d='M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z'/%3E%3Cpath d='M9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
       animation: pulse-icon 2s ease-in-out infinite;
     }
@@ -101,7 +95,7 @@
       line-height: 1.45;
     }
 
-    /* ── Scanning indicator (visible after loading, before target found) ── */
+    /* ── Scanning indicator ───────────────────────────── */
     #scan-indicator {
       position: fixed;
       bottom: 36px;
@@ -164,55 +158,101 @@
     </div>
   </div>
 
-  <!-- ── Scan hint (shown while searching for target) ── -->
+  <!-- ── Scan hint ────────────────────────────────────── -->
   <div id="scan-indicator" class="hidden">
     <span class="dot-pulse"></span>
     Scanning &mdash; point at the sticker
   </div>
 
-  <!-- ── A-Frame AR Scene ─────────────────────────────── -->
-  <a-scene mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no;"
-    color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false">
-    <!-- Preload assets -->
-    <a-assets>
-      <a-asset-item id="bunnyModel" src="./bunny-detective/source/bun_tective.glb"></a-asset-item>
-    </a-assets>
+  <!-- ── Three.js + MindAR (module scripts) ───────────── -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/",
+        "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
+      }
+    }
+  </script>
 
-    <!-- Camera (fixed, no look-controls) -->
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { MindARThree } from 'mindar-image-three';
 
-    <!-- Image target anchor (index 0) -->
-    <a-entity mindar-image-target="targetIndex: 0">
-      <!-- 3D Bunny Detective model with built-in animation -->
-      <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" rotation="0 0 0" scale="0.5 0.5 0.5"
-        animation-mixer="loop: repeat; timeScale: 1;"></a-gltf-model>
-    </a-entity>
-  </a-scene>
-
-  <!-- ── UI Logic ─────────────────────────────────────── -->
-  <script>
     const overlay = document.getElementById('loading-overlay');
     const scanHint = document.getElementById('scan-indicator');
-    const sceneEl = document.querySelector('a-scene');
-    const targetEl = document.querySelector('[mindar-image-target]');
 
-    // When MindAR / A-Frame scene is fully ready
-    sceneEl.addEventListener('renderstart', () => {
-      // Hide loading overlay, show scan hint
+    // ── MindAR + Three.js setup ──────────────────────────
+    const mindarThree = new MindARThree({
+      container: document.body,
+      imageTargetSrc: './targets.mind',
+      uiLoading: 'no',
+      uiScanning: 'no',
+      uiError: 'no',
+    });
+
+    const { renderer, scene, camera } = mindarThree;
+
+    // ── Lighting ─────────────────────────────────────────
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(0.5, 1, 1);
+    scene.add(dirLight);
+
+    // ── Load GLB model ───────────────────────────────────
+    const anchor = mindarThree.addAnchor(0);
+    let mixer = null;
+    const clock = new THREE.Clock();
+
+    const loader = new GLTFLoader();
+    loader.load('./bunny-detective/source/bun_tective.glb', (gltf) => {
+      const model = gltf.scene;
+      model.scale.set(0.5, 0.5, 0.5);
+      model.position.set(0, 0.1, 0);
+      anchor.group.add(model);
+
+      // Play ALL embedded animations
+      if (gltf.animations && gltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(model);
+        gltf.animations.forEach((clip) => {
+          const action = mixer.clipAction(clip);
+          action.play();
+        });
+        console.log(`Playing ${gltf.animations.length} animation(s):`,
+          gltf.animations.map(a => a.name));
+      } else {
+        console.log('No embedded animations found in GLB');
+      }
+    });
+
+    // ── Target found / lost events ───────────────────────
+    anchor.onTargetFound = () => {
+      scanHint.classList.add('hidden');
+    };
+    anchor.onTargetLost = () => {
+      scanHint.classList.remove('hidden');
+    };
+
+    // ── Start AR ─────────────────────────────────────────
+    const start = async () => {
+      await mindarThree.start();
+
+      // Hide loading, show scan hint
       overlay.classList.add('hidden');
       scanHint.classList.remove('hidden');
-    });
 
-    // When the target image is found
-    targetEl.addEventListener('targetFound', () => {
-      scanHint.classList.add('hidden');
-    });
+      // Render loop with animation mixer update
+      renderer.setAnimationLoop(() => {
+        const delta = clock.getDelta();
+        if (mixer) mixer.update(delta);
+        renderer.render(scene, camera);
+      });
+    };
 
-    // When the target image is lost
-    targetEl.addEventListener('targetLost', () => {
-      scanHint.classList.remove('hidden');
-    });
+    start();
   </script>
 </body>
 
