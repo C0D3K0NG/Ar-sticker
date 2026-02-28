@@ -6,8 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AR Bunny Detective</title>
 
-  <!-- A-Frame + MindAR -->
+  <!-- A-Frame + MindAR + Extras -->
   <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.5.0/dist/aframe-extras.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
@@ -183,10 +184,9 @@
 
     <!-- Image target anchor (index 0) -->
     <a-entity mindar-image-target="targetIndex: 0">
-      <!-- 3D Bunny Detective model -->
+      <!-- 3D Bunny Detective model with built-in animation -->
       <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" rotation="0 0 0" scale="0.5 0.5 0.5"
-        animation="property: position; to: 0 0.15 0.1; dur: 1800; easing: easeInOutSine; loop: true; dir: alternate"
-        animation__rotate="property: rotation; to: 0 30 0; dur: 4000; easing: easeInOutQuad; loop: true; dir: alternate"></a-gltf-model>
+        animation-mixer="loop: repeat; timeScale: 1;"></a-gltf-model>
     </a-entity>
   </a-scene>
 
