@@ -1,19 +1,219 @@
+<!DOCTYPE html>
 <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
-  </head>
-  <body>
-    <a-scene mindar-image="imageTargetSrc: ./targets.mind; filterMinCF: 0.0001; filterBeta: 0.001;" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
-      
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-entity mindar-image-target="targetIndex: 0">
-        <a-gltf-model rotation="0 0 0" position="0 0 0" scale="0.5 0.5 0.5" src="./bunny-detective/source/bun_tective.glb" animation-mixer="clip: *; loop: repeat;"></a-gltf-model>
-      </a-entity>
-      
-    </a-scene>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AR Bunny Detective</title>
+
+  <!-- A-Frame + MindAR -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    /* ── Reset ─────────────────────────────────────────── */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* ── Loading Overlay ───────────────────────────────── */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 10, 20, 0.85);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+
+    #loading-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* pulsing ring */
+    .scan-ring {
+      width: 120px;
+      height: 120px;
+      border: 3px solid rgba(130, 200, 255, 0.25);
+      border-top-color: #82c8ff;
+      border-radius: 50%;
+      animation: spin 1.2s linear infinite;
+      margin-bottom: 28px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .scan-icon {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      /* camera icon via inline SVG data-uri */
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%2382c8ff' viewBox='0 0 24 24'%3E%3Cpath d='M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z'/%3E%3Cpath d='M9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E") center/contain no-repeat;
+      animation: pulse-icon 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-icon {
+
+      0%,
+      100% {
+        opacity: 0.7;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1.1);
+      }
+    }
+
+    .loading-title {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #e4f0ff;
+      letter-spacing: 0.04em;
+    }
+
+    .loading-hint {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: rgba(200, 220, 255, 0.6);
+      max-width: 260px;
+      text-align: center;
+      line-height: 1.45;
+    }
+
+    /* ── Scanning indicator (visible after loading, before target found) ── */
+    #scan-indicator {
+      position: fixed;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 12px 28px;
+      border-radius: 40px;
+      color: #c8e0ff;
+      font-size: 0.85rem;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: opacity 0.5s ease, transform 0.5s ease;
+    }
+
+    #scan-indicator.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+      pointer-events: none;
+    }
+
+    .dot-pulse {
+      width: 8px;
+      height: 8px;
+      background: #82c8ff;
+      border-radius: 50%;
+      animation: dot-blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes dot-blink {
+
+      0%,
+      100% {
+        opacity: 0.3;
+      }
+
+      50% {
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ── Loading Overlay ──────────────────────────────── -->
+  <div id="loading-overlay">
+    <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+      <div class="scan-ring"></div>
+      <div class="scan-icon"></div>
+    </div>
+    <div class="loading-title">Initializing AR&hellip;</div>
+    <div class="loading-hint">
+      Please allow camera access when prompted.<br />
+      Point your camera at the Detective Rat sticker.
+    </div>
+  </div>
+
+  <!-- ── Scan hint (shown while searching for target) ── -->
+  <div id="scan-indicator" class="hidden">
+    <span class="dot-pulse"></span>
+    Scanning &mdash; point at the sticker
+  </div>
+
+  <!-- ── A-Frame AR Scene ─────────────────────────────── -->
+  <a-scene mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no;"
+    color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+    <!-- Preload assets -->
+    <a-assets>
+      <a-asset-item id="bunnyModel" src="./bunny-detective/source/bun_tective.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- Camera (fixed, no look-controls) -->
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- Image target anchor (index 0) -->
+    <a-entity mindar-image-target="targetIndex: 0">
+      <!-- 3D Bunny Detective model -->
+      <a-gltf-model src="#bunnyModel" position="0 0 0.1" rotation="0 0 0" scale="0.005 0.005 0.005"
+        animation="property: position; to: 0 0.08 0.1; dur: 1800; easing: easeInOutSine; loop: true; dir: alternate"
+        animation__rotate="property: rotation; to: 0 30 0; dur: 4000; easing: easeInOutQuad; loop: true; dir: alternate"></a-gltf-model>
+    </a-entity>
+  </a-scene>
+
+  <!-- ── UI Logic ─────────────────────────────────────── -->
+  <script>
+    const overlay = document.getElementById('loading-overlay');
+    const scanHint = document.getElementById('scan-indicator');
+    const sceneEl = document.querySelector('a-scene');
+    const targetEl = document.querySelector('[mindar-image-target]');
+
+    // When MindAR / A-Frame scene is fully ready
+    sceneEl.addEventListener('renderstart', () => {
+      // Hide loading overlay, show scan hint
+      overlay.classList.add('hidden');
+      scanHint.classList.remove('hidden');
+    });
+
+    // When the target image is found
+    targetEl.addEventListener('targetFound', () => {
+      scanHint.classList.add('hidden');
+    });
+
+    // When the target image is lost
+    targetEl.addEventListener('targetLost', () => {
+      scanHint.classList.remove('hidden');
+    });
+  </script>
+</body>
+
 </html>
