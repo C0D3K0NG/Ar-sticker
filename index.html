@@ -98,10 +98,10 @@
       line-height: 1.45;
     }
 
-    /* ── Scanning indicator ───────────────────────────── */
+    /* ── Scan indicator ────────────────────────────────── */
     #scan-indicator {
       position: fixed;
-      bottom: 36px;
+      bottom: 100px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 100;
@@ -112,7 +112,6 @@
       border-radius: 40px;
       color: #c8e0ff;
       font-size: 0.85rem;
-      font-family: 'Segoe UI', system-ui, sans-serif;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -144,6 +143,91 @@
         opacity: 1;
       }
     }
+
+    /* ── Animation Clip Switcher ──────────────────────── */
+    #clip-switcher {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 200;
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(10, 10, 30, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 16px;
+      border: 1px solid rgba(130, 200, 255, 0.15);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 95vw;
+    }
+
+    #clip-switcher.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+      pointer-events: none;
+    }
+
+    .clip-btn {
+      padding: 8px 16px;
+      border: 1px solid rgba(130, 200, 255, 0.25);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #c0d8f0;
+      font-size: 0.8rem;
+      font-weight: 500;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .clip-btn:hover {
+      background: rgba(130, 200, 255, 0.15);
+      border-color: rgba(130, 200, 255, 0.4);
+      color: #fff;
+    }
+
+    .clip-btn.active {
+      background: linear-gradient(135deg, rgba(80, 160, 255, 0.4), rgba(120, 80, 255, 0.35));
+      border-color: rgba(130, 200, 255, 0.6);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 0 12px rgba(100, 160, 255, 0.25);
+    }
+
+    /* Emoji icons for each clip */
+    .clip-btn::before {
+      margin-right: 4px;
+    }
+
+    .clip-btn[data-clip="Walk"]::before {
+      content: "🚶";
+    }
+
+    .clip-btn[data-clip="Talk"]::before {
+      content: "💬";
+    }
+
+    .clip-btn[data-clip="Jump"]::before {
+      content: "🦘";
+    }
+
+    .clip-btn[data-clip="Investigate"]::before {
+      content: "🔍";
+    }
+
+    .clip-btn[data-clip="Climb"]::before {
+      content: "🧗";
+    }
+
+    .clip-btn[data-clip="Idle"]::before {
+      content: "😴";
+    }
   </style>
 </head>
 
@@ -167,6 +251,16 @@
     Scanning &mdash; point at the sticker
   </div>
 
+  <!-- ── Animation Clip Switcher ──────────────────────── -->
+  <div id="clip-switcher" class="hidden">
+    <button class="clip-btn active" data-clip="Walk">Walk</button>
+    <button class="clip-btn" data-clip="Talk">Talk</button>
+    <button class="clip-btn" data-clip="Jump">Jump</button>
+    <button class="clip-btn" data-clip="Investigate">Investigate</button>
+    <button class="clip-btn" data-clip="Climb">Climb</button>
+    <button class="clip-btn" data-clip="Idle">Idle</button>
+  </div>
+
   <!-- ── A-Frame AR Scene ─────────────────────────────── -->
   <a-scene mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no;"
     color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
@@ -185,8 +279,7 @@
 
     <!-- Image target anchor (index 0) -->
     <a-entity mindar-image-target="targetIndex: 0">
-      <!-- 3D Bunny Detective with embedded animations -->
-      <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" scale="0.5 0.5 0.5"
+      <a-gltf-model id="bunny-model" src="#bunnyModel" position="0 0.1 0.1" scale="0.5 0.5 0.5"
         animation-mixer="clip: Walk; loop: repeat; timeScale: 1;"></a-gltf-model>
     </a-entity>
   </a-scene>
@@ -195,21 +288,47 @@
   <script>
     const overlay = document.getElementById('loading-overlay');
     const scanHint = document.getElementById('scan-indicator');
+    const clipSwitcher = document.getElementById('clip-switcher');
     const sceneEl = document.querySelector('a-scene');
     const targetEl = document.querySelector('[mindar-image-target]');
+    const modelEl = document.getElementById('bunny-model');
+    const clipBtns = document.querySelectorAll('.clip-btn');
 
-    // When A-Frame scene is ready (camera started)
+    // Scene ready
     sceneEl.addEventListener('renderstart', () => {
       overlay.classList.add('hidden');
       scanHint.classList.remove('hidden');
     });
 
-    // Target found / lost
+    // Target found → show clip switcher, hide scan hint
     targetEl.addEventListener('targetFound', () => {
       scanHint.classList.add('hidden');
+      clipSwitcher.classList.remove('hidden');
     });
+
+    // Target lost → hide clip switcher, show scan hint
     targetEl.addEventListener('targetLost', () => {
+      clipSwitcher.classList.add('hidden');
       scanHint.classList.remove('hidden');
+    });
+
+    // Clip switcher button logic
+    clipBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const clipName = btn.getAttribute('data-clip');
+
+        // Update active button
+        clipBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Switch animation clip
+        modelEl.setAttribute('animation-mixer', {
+          clip: clipName,
+          loop: 'repeat',
+          timeScale: 1,
+          crossFadeDuration: 0.4
+        });
+      });
     });
   </script>
 </body>
