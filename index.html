@@ -6,8 +6,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AR Bunny Detective</title>
 
+  <!-- A-Frame + MindAR -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <!-- Custom animation-mixer component (no aframe-extras dependency) -->
+  <script>
+    AFRAME.registerComponent('play-all-model-animations', {
+      init: function () {
+        this.mixer = null;
+        this.clock = new THREE.Clock();
+
+        this.el.addEventListener('model-loaded', (e) => {
+          const model = e.detail.model;
+          const animations = model.animations;
+
+          // Try to get animations from the GLTF scene
+          if (!animations || animations.length === 0) {
+            // Also try the gltf source
+            const gltfModel = this.el.components['gltf-model'];
+            if (gltfModel && gltfModel.model && gltfModel.model.animations && gltfModel.model.animations.length > 0) {
+              this._startAnimations(model, gltfModel.model.animations);
+            }
+            return;
+          }
+          this._startAnimations(model, animations);
+        });
+      },
+
+      _startAnimations: function (model, animations) {
+        this.mixer = new THREE.AnimationMixer(model);
+        animations.forEach((clip) => {
+          const action = this.mixer.clipAction(clip);
+          action.play();
+        });
+      },
+
+      tick: function (time, delta) {
+        if (this.mixer) {
+          this.mixer.update(delta / 1000);
+        }
+      }
+    });
+  </script>
+
   <style>
-    /* ── Reset ─────────────────────────────────────────── */
     * {
       margin: 0;
       padding: 0;
@@ -40,7 +83,6 @@
       pointer-events: none;
     }
 
-    /* pulsing ring */
     .scan-ring {
       width: 120px;
       height: 120px;
@@ -164,95 +206,50 @@
     Scanning &mdash; point at the sticker
   </div>
 
-  <!-- ── Three.js + MindAR (module scripts) ───────────── -->
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/",
-        "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
-      }
-    }
-  </script>
+  <!-- ── A-Frame AR Scene ─────────────────────────────── -->
+  <a-scene mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: no; uiScanning: no; uiError: no;"
+    color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+    <!-- Preload assets -->
+    <a-assets>
+      <a-asset-item id="bunnyModel" src="./bunny-detective/source/bun_tective.glb"></a-asset-item>
+    </a-assets>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-    import { MindARThree } from 'mindar-image-three';
+    <!-- Better lighting for the model -->
+    <a-entity light="type: ambient; color: #fff; intensity: 0.8;"></a-entity>
+    <a-entity light="type: directional; color: #fff; intensity: 1.2;" position="0.5 1 1"></a-entity>
 
+    <!-- Camera -->
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- Image target anchor (index 0) -->
+    <a-entity mindar-image-target="targetIndex: 0">
+      <!-- 3D Bunny Detective with embedded animations -->
+      <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" rotation="0 0 0" scale="0.5 0.5 0.5"
+        play-all-model-animations></a-gltf-model>
+    </a-entity>
+  </a-scene>
+
+  <!-- ── UI Logic ─────────────────────────────────────── -->
+  <script>
     const overlay = document.getElementById('loading-overlay');
     const scanHint = document.getElementById('scan-indicator');
+    const sceneEl = document.querySelector('a-scene');
+    const targetEl = document.querySelector('[mindar-image-target]');
 
-    // ── MindAR + Three.js setup ──────────────────────────
-    const mindarThree = new MindARThree({
-      container: document.body,
-      imageTargetSrc: './targets.mind',
-      uiLoading: 'no',
-      uiScanning: 'no',
-      uiError: 'no',
-    });
-
-    const { renderer, scene, camera } = mindarThree;
-
-    // ── Lighting ─────────────────────────────────────────
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-    scene.add(ambientLight);
-
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    dirLight.position.set(0.5, 1, 1);
-    scene.add(dirLight);
-
-    // ── Load GLB model ───────────────────────────────────
-    const anchor = mindarThree.addAnchor(0);
-    let mixer = null;
-    const clock = new THREE.Clock();
-
-    const loader = new GLTFLoader();
-    loader.load('./bunny-detective/source/bun_tective.glb', (gltf) => {
-      const model = gltf.scene;
-      model.scale.set(0.5, 0.5, 0.5);
-      model.position.set(0, 0.1, 0);
-      anchor.group.add(model);
-
-      // Play ALL embedded animations
-      if (gltf.animations && gltf.animations.length > 0) {
-        mixer = new THREE.AnimationMixer(model);
-        gltf.animations.forEach((clip) => {
-          const action = mixer.clipAction(clip);
-          action.play();
-        });
-        console.log(`Playing ${gltf.animations.length} animation(s):`,
-          gltf.animations.map(a => a.name));
-      } else {
-        console.log('No embedded animations found in GLB');
-      }
-    });
-
-    // ── Target found / lost events ───────────────────────
-    anchor.onTargetFound = () => {
-      scanHint.classList.add('hidden');
-    };
-    anchor.onTargetLost = () => {
-      scanHint.classList.remove('hidden');
-    };
-
-    // ── Start AR ─────────────────────────────────────────
-    const start = async () => {
-      await mindarThree.start();
-
-      // Hide loading, show scan hint
+    // When A-Frame scene is ready (camera started)
+    sceneEl.addEventListener('renderstart', () => {
       overlay.classList.add('hidden');
       scanHint.classList.remove('hidden');
+    });
 
-      // Render loop with animation mixer update
-      renderer.setAnimationLoop(() => {
-        const delta = clock.getDelta();
-        if (mixer) mixer.update(delta);
-        renderer.render(scene, camera);
-      });
-    };
-
-    start();
+    // Target found / lost
+    targetEl.addEventListener('targetFound', () => {
+      scanHint.classList.add('hidden');
+    });
+    targetEl.addEventListener('targetLost', () => {
+      scanHint.classList.remove('hidden');
+    });
   </script>
 </body>
 
