@@ -6,62 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AR Bunny Detective</title>
 
-  <!-- A-Frame + MindAR -->
-  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <!-- A-Frame 1.5 + aframe-extras (animation-mixer) + MindAR -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.4.0/dist/aframe-extras.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
-  <!-- Custom animation-mixer component (no aframe-extras dependency) -->
-  <script>
-    // Patch A-Frame's gltf-model to expose animations, then play them
-    AFRAME.registerComponent('animated-glb', {
-      dependencies: ['gltf-model'],
-
-      init: function () {
-        this.mixer = null;
-        this.el.addEventListener('model-loaded', this.onModelLoaded.bind(this));
-
-        // In case model already loaded before this component initialized
-        var mesh = this.el.getObject3D('mesh');
-        if (mesh) { this.onModelLoaded(); }
-      },
-
-      onModelLoaded: function (evt) {
-        const mesh = this.el.getObject3D('mesh');
-        if (!mesh) return;
-
-        // A-Frame 1.4+ copies gltf.animations to model.animations
-        let clips = mesh.animations;
-
-        // Fallback: walk the scene graph for animations
-        if (!clips || clips.length === 0) {
-          clips = [];
-          mesh.traverse(function (node) {
-            if (node.animations && node.animations.length > 0) {
-              clips = clips.concat(node.animations);
-            }
-          });
-        }
-
-        if (clips.length > 0) {
-          this.mixer = new THREE.AnimationMixer(mesh);
-          for (var i = 0; i < clips.length; i++) {
-            this.mixer.clipAction(clips[i]).play();
-          }
-          console.log('AR: Playing ' + clips.length + ' animation(s)');
-        } else {
-          console.warn('AR: No animation clips found in model');
-        }
-      },
-
-      tick: function (t, dt) {
-        if (this.mixer) this.mixer.update(dt / 1000);
-      },
-
-      remove: function () {
-        if (this.mixer) this.mixer.stopAllAction();
-      }
-    });
-  </script>
 
   <style>
     * {
@@ -238,7 +186,8 @@
     <!-- Image target anchor (index 0) -->
     <a-entity mindar-image-target="targetIndex: 0">
       <!-- 3D Bunny Detective with embedded animations -->
-      <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" scale="0.5 0.5 0.5" animated-glb></a-gltf-model>
+      <a-gltf-model src="#bunnyModel" position="0 0.1 0.1" scale="0.5 0.5 0.5"
+        animation-mixer="clip: Walk; loop: repeat; timeScale: 1;"></a-gltf-model>
     </a-entity>
   </a-scene>
 
